@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LabelLens AI - Instant Audit</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .loader { border-top-color: #3B82F6; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-4xl w-full bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border border-gray-700 flex flex-col md:flex-row">
+        
+        <div class="p-8 md:w-1/2 bg-gray-800 flex flex-col justify-center border-r border-gray-700">
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                    LabelLens AI
+                </h1>
+                <p class="text-gray-400 text-sm mt-2">Upload a product label to audit compliance instantly.</p>
+            </div>
+
+            <form id="uploadForm" class="space-y-4">
+                <div class="relative group cursor-pointer">
+                    <input type="file" id="fileInput" name="file" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="previewImage(event)">
+                    <div class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center group-hover:border-blue-500 transition-all bg-gray-800/50">
+                        <div class="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-cloud-upload-alt text-2xl text-blue-400"></i>
+                        </div>
+                        <p class="text-gray-300 font-medium">Click to Upload Image</p>
+                        <p class="text-xs text-gray-500 mt-1">Supports JPG, PNG</p>
+                    </div>
+                </div>
+
+                <div id="previewContainer" class="hidden relative rounded-lg overflow-hidden border border-gray-600 h-48 bg-black">
+                    <img id="imagePreview" class="w-full h-full object-contain opacity-80">
+                </div>
+
+                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2">
+                    <span id="btnText">Run Audit</span>
+                    <div id="loadingSpinner" class="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 hidden"></div>
+                </button>
+            </form>
+        </div>
+
+        <div class="p-8 md:w-1/2 bg-gray-900/50 flex flex-col">
+            <h2 class="text-xl font-semibold mb-6 flex items-center gap-2">
+                <i class="fas fa-chart-pie text-blue-400"></i> Analysis Report
+            </h2>
+
+            <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-gray-600 text-center opacity-50">
+                <i class="fas fa-search text-4xl mb-3"></i>
+                <p>Results will appear here...</p>
+            </div>
+
+            <div id="resultsContent" class="hidden space-y-6 animate-fade-in">
+                
+                <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 text-center">
+                    <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Compliance Score</p>
+                    <div class="flex items-end justify-center gap-2">
+                        <span id="scoreValue" class="text-5xl font-bold text-white">0</span>
+                        <span class="text-xl text-gray-500 mb-1">/100</span>
+                    </div>
+                    <div id="statusBadge" class="mt-3 inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-700 text-gray-300">
+                        PENDING
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-red-400 font-bold mb-3 flex items-center gap-2">
+                        <i class="fas fa-times-circle"></i> Missing / Violations
+                    </h3>
+                    <div id="missingList" class="space-y-2"></div>
+                </div>
+                
+                <div>
+                    <h3 class="text-orange-400 font-bold mb-3 flex items-center gap-2">
+                        <i class="fas fa-heartbeat"></i> Health Warnings
+                    </h3>
+                    <div id="nutritionList" class="space-y-2"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. Image Preview Logic
+        function previewImage(event) {
+            const reader = new FileReader();
+            reader.onload = function(){
+                const output = document.getElementById('imagePreview');
+                output.src = reader.result;
+                document.getElementById('previewContainer').classList.remove('hidden');
+            };
+            reader.readAsDataURL(event.target.files[0]);
+        }
+
+        // 2. THE "NO RELOAD" SUBMISSION LOGIC
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault(); // STOP THE PAGE RELOAD!
+
+            // Show Loading State
+            const btnText = document.getElementById('btnText');
+            const spinner = document.getElementById('loadingSpinner');
+            btnText.textContent = "Analyzing...";
+            spinner.classList.remove('hidden');
+
+            // Prepare Data
+            const formData = new FormData(this);
+
+            try {
+                // Send to Python (Background Fetch)
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json(); // Get JSON answer
+
+                if (data.error) {
+                    alert("Error: " + data.error);
+                } else {
+                    displayResults(data);
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert("Something went wrong!");
+            } finally {
+                // Reset Button
+                btnText.textContent = "Run Audit";
+                spinner.classList.add('hidden');
+            }
+        });
+
+        // 3. Update the UI with Results
+        function displayResults(data) {
+            // Hide placeholder, show results
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('resultsContent').classList.remove('hidden');
+
+            // Update Score
+            const scoreEl = document.getElementById('scoreValue');
+            scoreEl.textContent = data.score;
+            
+            // Color Code the Score
+            if(data.score >= 80) scoreEl.className = "text-5xl font-bold text-green-400";
+            else if(data.score >= 50) scoreEl.className = "text-5xl font-bold text-yellow-400";
+            else scoreEl.className = "text-5xl font-bold text-red-500";
+
+            // Update Badge
+            const badge = document.getElementById('statusBadge');
+            if(data.score === 100) {
+                badge.className = "mt-3 inline-block px-3 py-1 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30";
+                badge.textContent = "FULLY COMPLIANT";
+            } else {
+                badge.className = "mt-3 inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30";
+                badge.textContent = "NON-COMPLIANT";
+            }
+
+            // Fill Missing List
+            const missingList = document.getElementById('missingList');
+            missingList.innerHTML = ""; // Clear old data
+            if (data.missing.length === 0 && data.ingredient_issues.length === 0) {
+                 missingList.innerHTML = `<div class="text-green-500 text-sm italic">No violations found!</div>`;
+            } else {
+                // Add Missing Fields
+                data.missing.forEach(item => {
+                    missingList.innerHTML += `
+                        <div class="flex items-center gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                            <i class="fas fa-times text-red-400"></i>
+                            <span class="text-sm font-medium text-gray-300">${item} Missing</span>
+                        </div>`;
+                });
+                // Add Ingredient Issues
+                if(data.ingredient_issues) {
+                    data.ingredient_issues.forEach(item => {
+                        missingList.innerHTML += `
+                            <div class="flex items-center gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                                <i class="fas fa-exclamation-triangle text-red-400"></i>
+                                <span class="text-sm font-medium text-gray-300">${item}</span>
+                            </div>`;
+                    });
+                }
+            }
+
+            // Fill Nutrition Warnings
+            const nutritionList = document.getElementById('nutritionList');
+            nutritionList.innerHTML = "";
+            if (!data.health_warnings || data.health_warnings.length === 0) {
+                nutritionList.innerHTML = `<div class="text-green-500 text-sm italic">No health risks detected.</div>`;
+            } else {
+                data.health_warnings.forEach(item => {
+                    nutritionList.innerHTML += `
+                        <div class="flex items-center gap-3 p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
+                            <i class="fas fa-heart-broken text-orange-400"></i>
+                            <span class="text-sm font-medium text-gray-300">${item}</span>
+                        </div>`;
+                });
+            }
+        }
+    </script>
+</body>
+</html>
