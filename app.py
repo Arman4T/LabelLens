@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 # Your API Key
-os.environ["GEMINI_API_KEY"] = "AIzaSyA_S-PPBkzbJKXmC9wnz7GwtOpvQ__LP-Q"
+os.environ["GEMINI_API_KEY"] = "Google API Key"
 
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
